@@ -1,7 +1,7 @@
 {
   "name": "dsh-peak-status",
-  "version": "1.0.1",
-  "description": "Peak-hour indicator for the DSH web GUI: a native header chip showing whether the current Beijing time is inside DeepSeek's API peak window (daily 09:00–12:00 / 14:00–18:00), with a live clock, countdown, and ×2/off-peak pricing hints. · DSH Web GUI 高峰指示灯：原生会话头部胶囊，实时显示当前北京时间是否处于 DeepSeek API 高峰时段。",
+  "version": "1.0.2",
+  "description": "Peak-hour indicator for the DSH web GUI: a native header chip showing whether the current Beijing time is inside DeepSeek's API peak window (weekdays 09:00–12:00 / 14:00–18:00; weekends all-day valley price), with a live clock, countdown, and ×2/off-peak pricing hints. · DSH Web GUI 高峰指示灯：原生会话头部胶囊，实时显示当前北京时间是否处于 DeepSeek API 高峰时段（工作日 9:00-12:00 / 14:00-18:00，周末全天谷价）。",
   "type": "module",
   "main": "lib/index.js",
   "exports": {

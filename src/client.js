@@ -7,9 +7,11 @@
  * variables so it blends into the interface.
  *
  * Shows whether the current Beijing time falls in DeepSeek's API peak
- * window. Official definition (effective 2026-08-17):
- *   peak:     daily 09:00–12:00 and 14:00–18:00 (Beijing time)
- *   off-peak: everything else (priced at half of peak)
+ * window. Official pricing (peak/valley, effective 2026-08-17, weekends
+ * adjusted 2026-08-23):
+ *   weekdays peak:   09:00–12:00 and 14:00–18:00 (Beijing time)
+ *   weekends:        Saturday & Sunday all day at the valley price
+ *   off-peak:        everything else (priced at half of peak)
  *
  * Red = peak (bold), green = off-peak; live Beijing clock, countdown to the
  * next transition, click to expand a small popover with the full detail.
@@ -42,44 +44,84 @@
     var react = require('react')
 
     var TZ = 'Asia/Shanghai'
-    // Peak window boundaries in minutes of day: 09:00, 12:00, 14:00, 18:00.
+    // Weekday peak window boundaries in minutes of day: 09:00, 12:00, 14:00, 18:00.
     var BOUNDS = [540, 720, 840, 1080]
+    // Weekday labels for "next boundary" display (ISO weekday 1..7).
+    var WEEKDAY_LABELS = ['一', '二', '三', '四', '五', '六', '日']
 
     var FONT = 'var(--dsw-font-family, system-ui, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif)'
     var DIM = 'var(--dsw-alias-label-secondary, var(--dsh-text-dim, #8a8f98))'
     var PEAK_COLOR = 'var(--dsw-alias-state-error-primary, #e5484d)'
     var OFF_COLOR = 'var(--dsw-alias-state-success-primary, #30a46c)'
 
+    /** Beijing time parts incl. ISO weekday (1=Mon … 7=Sun), timezone-proof. */
     function bjParts() {
       var parts = new Intl.DateTimeFormat('en-GB', {
-        timeZone: TZ, hour12: false,
+        timeZone: TZ, hour12: false, weekday: 'short',
         hour: '2-digit', minute: '2-digit', second: '2-digit',
       }).formatToParts(new Date())
       var get = function (type) {
         for (var i = 0; i < parts.length; i++) {
-          if (parts[i].type === type) return Number(parts[i].value)
+          if (parts[i].type === type) return parts[i].value
         }
-        return 0
+        return ''
       }
-      return { h: get('hour'), m: get('minute'), s: get('second') }
+      var wdMap = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 }
+      return {
+        h: Number(get('hour')),
+        m: Number(get('minute')),
+        s: Number(get('second')),
+        weekday: wdMap[get('weekday')] || 1,
+      }
     }
 
+    /**
+     * Peak/off-peak state at a Beijing-time instant.
+     * Weekends (Sat/Sun) are all-day off-peak; weekdays follow the peak
+     * windows 09:00–12:00 / 14:00–18:00. Returns the next state boundary as
+     * { nextMin, daysAhead } (daysAhead counts how many Beijing days away),
+     * seconds until it, and the progress through the current phase.
+     */
     function compute(t) {
       var now = t.h * 60 + t.m
-      var peak = (now >= BOUNDS[0] && now < BOUNDS[1]) || (now >= BOUNDS[2] && now < BOUNDS[3])
-      var next = null
-      for (var i = 0; i < BOUNDS.length; i++) {
-        if (BOUNDS[i] > now) { next = { min: BOUNDS[i], tomorrow: false }; break }
+      var weekend = t.weekday === 6 || t.weekday === 7
+      var peak, nextMin, daysAhead, phaseStartMin, phaseLenMin
+
+      if (weekend) {
+        peak = false
+        nextMin = BOUNDS[0] // Monday 09:00
+        daysAhead = ((1 - t.weekday + 7) % 7) || 7 // Sat → 2, Sun → 1
+        var daysSinceSat = (t.weekday - 6 + 7) % 7 // Sat=0, Sun=1
+        phaseStartMin = daysSinceSat * 1440
+        phaseLenMin = 2 * 1440 + BOUNDS[0] // Sat 00:00 → Mon 09:00
+      } else {
+        peak = (now >= BOUNDS[0] && now < BOUNDS[1]) || (now >= BOUNDS[2] && now < BOUNDS[3])
+        var next = null
+        for (var i = 0; i < BOUNDS.length; i++) {
+          if (BOUNDS[i] > now) { next = BOUNDS[i]; break }
+        }
+        if (next !== null) {
+          nextMin = next
+          daysAhead = 0
+          var ps = 0
+          for (var j = BOUNDS.length - 1; j >= 0; j--) {
+            if (BOUNDS[j] <= now) { ps = BOUNDS[j]; break }
+          }
+          phaseStartMin = ps
+          phaseLenMin = nextMin - ps
+        } else {
+          nextMin = BOUNDS[0]
+          // After 18:00: Friday → next Monday 09:00 (3 days), otherwise next day 09:00.
+          daysAhead = t.weekday === 5 ? 3 : 1
+          phaseStartMin = BOUNDS[3]
+          phaseLenMin = daysAhead * 1440 + BOUNDS[0] - phaseStartMin
+        }
       }
-      if (next === null) next = { min: BOUNDS[0], tomorrow: true }
-      var secsToNext = (next.min - now) * 60 - t.s + (next.tomorrow ? 24 * 3600 : 0)
-      var phaseStart = 0
-      for (var j = BOUNDS.length - 1; j >= 0; j--) {
-        if (BOUNDS[j] <= now) { phaseStart = BOUNDS[j]; break }
-      }
-      var phaseLenMin = (next.min - now) + (next.tomorrow ? 1440 : 0) + (now - phaseStart)
-      var progress = phaseLenMin > 0 ? Math.min(100, Math.max(0, ((now - phaseStart) / phaseLenMin) * 100)) : 0
-      return { peak: peak, next: next, secsToNext: secsToNext, progress: progress }
+
+      var secsToNext = daysAhead * 86400 + (nextMin - now) * 60 - t.s
+      var elapsedMin = weekend ? daysSinceSat * 1440 + now : now - phaseStartMin
+      var progress = phaseLenMin > 0 ? Math.min(100, Math.max(0, (elapsedMin / phaseLenMin) * 100)) : 0
+      return { peak: peak, nextMin: nextMin, daysAhead: daysAhead, secsToNext: secsToNext, progress: progress }
     }
 
     function pad(n) { return (n < 10 ? '0' : '') + n }
@@ -87,8 +129,10 @@
     function fmtBoundary(min) { return pad(Math.floor(min / 60)) + ':' + pad(min % 60) }
     function fmtDur(totalSecs) {
       var s = Math.max(0, Math.round(totalSecs))
-      var h = Math.floor(s / 3600)
+      var d = Math.floor(s / 86400)
+      var h = Math.floor((s % 86400) / 3600)
       var m = Math.floor((s % 3600) / 60)
+      if (d > 0) return d + 'd ' + h + 'h'
       return (h > 0 ? h + 'h ' : '') + m + 'm'
     }
     function fmtDurFull(totalSecs) {
@@ -97,6 +141,13 @@
       var m = Math.floor((s % 3600) / 60)
       var sec = s % 60
       return pad(h) + ':' + pad(m) + ':' + pad(sec)
+    }
+    /** Human label for the next boundary: "18:00" / "明天 09:00" / "周一 09:00". */
+    function fmtBoundaryLabel(t, s) {
+      if (s.daysAhead === 0) return fmtBoundary(s.nextMin)
+      if (s.daysAhead === 1) return '明天 ' + fmtBoundary(s.nextMin)
+      var nextW = ((t.weekday - 1 + s.daysAhead) % 7) + 1
+      return '周' + WEEKDAY_LABELS[nextW - 1] + ' ' + fmtBoundary(s.nextMin)
     }
 
     function PeakChip() {
@@ -112,17 +163,18 @@
       }, [])
 
       var s = compute(tick)
+      var weekend = tick.weekday === 6 || tick.weekday === 7
       var color = s.peak ? PEAK_COLOR : OFF_COLOR
       var clock = fmtClock(tick)
-      var boundaryLabel = fmtBoundary(s.next.min) + (s.next.tomorrow ? '（明天）' : '')
+      var boundaryLabel = fmtBoundaryLabel(tick, s)
 
       var chip = react.createElement(
         'div',
         {
           onClick: function () { setOpen(!open[0]) },
           title: s.peak
-            ? '高峰期（北京时间 9:00-12:00 / 14:00-18:00）：价格 = 空闲 ×2。' + boundaryLabel + ' 结束，点击展开详情'
-            : '空闲期：价格为高峰一半。下一高峰 ' + boundaryLabel + '，点击展开详情',
+            ? '高峰期（工作日 9:00-12:00 / 14:00-18:00）：价格 = 空闲 ×2。' + boundaryLabel + ' 结束，点击展开详情'
+            : '空闲期：价格为高峰一半' + (weekend ? '（周末全天谷价）' : '') + '。下一高峰 ' + boundaryLabel + '，点击展开详情',
           style: {
             display: 'inline-flex', alignItems: 'center', gap: 6,
             fontFamily: FONT, fontSize: 12, lineHeight: '20px',
@@ -135,7 +187,7 @@
         [
           react.createElement('span', { key: 'dot', style: { width: 7, height: 7, borderRadius: '50%', background: color, flexShrink: 0 } }),
           react.createElement('span', { key: 'state', style: { fontWeight: s.peak ? 700 : 500, color: color } },
-            s.peak ? '高峰期' : '空闲期'),
+            s.peak ? '高峰期' : (weekend ? '周末谷价' : '空闲期')),
           react.createElement('span', { key: 'clock', style: { fontVariantNumeric: 'tabular-nums' } }, clock),
           react.createElement('span', { key: 'count', style: { fontVariantNumeric: 'tabular-nums' } },
             s.peak
@@ -164,14 +216,16 @@
         [
           react.createElement('div', { key: 'l1', style: { display: 'flex', alignItems: 'center', gap: 6 } }, [
             react.createElement('span', { key: 'st', style: { fontWeight: 700, color: color } },
-              s.peak ? '高峰时段' : '空闲时段'),
+              s.peak ? '高峰时段' : (weekend ? '周末谷价' : '空闲时段')),
             react.createElement('span', { key: 'tm', style: { fontVariantNumeric: 'tabular-nums' } },
               clock + '（北京）'),
             react.createElement('span', { key: 'price', style: { color: color, fontWeight: 500 } },
               s.peak ? '价格 ×2' : '半价'),
           ]),
           react.createElement('div', { key: 'l2' },
-            '高峰窗口：09:00–12:00 / 14:00–18:00（每日）'),
+            '高峰窗口（工作日）：09:00–12:00 / 14:00–18:00'),
+          react.createElement('div', { key: 'l2b', style: { color: weekend ? OFF_COLOR : DIM, fontWeight: weekend ? 600 : 400 } },
+            '周末（周六、周日）：全天按谷价计费'),
           react.createElement('div', { key: 'l3', style: { fontVariantNumeric: 'tabular-nums' } },
             '下一转折：' + boundaryLabel + ' · 倒计时 ' + fmtDurFull(s.secsToNext)),
           react.createElement('div', { key: 'bar', style: { display: 'flex', alignItems: 'center', gap: 8 } }, [
@@ -185,7 +239,7 @@
               s.progress.toFixed(0) + '%'),
           ]),
           react.createElement('div', { key: 'foot', style: { fontSize: 10.5, lineHeight: 1.5, opacity: 0.85 } },
-            '官方峰谷定价 2026-08-17 生效：空闲时段价格为高峰一半。'),
+            '官方峰谷定价 8/17 生效，8/23 起周末全天谷价；空闲价 = 高峰一半。'),
         ],
       )
 

@@ -8,12 +8,14 @@ A peak-hour indicator for the [DeepSeek Harness](https://github.com/deepseek-ai/
 
 ## Peak windows
 
-DeepSeek's official peak/valley API pricing (effective 2026-08-17):
+DeepSeek's official peak/valley API pricing (effective 2026-08-17, weekends adjusted 2026-08-23):
 
-| State | Beijing time (daily) | Price |
+| State | When (Beijing time) | Price |
 | :-- | :-- | :-- |
-| 🔴 **Peak** | 09:00–12:00 and 14:00–18:00 | peak price (= off-peak ×2) |
-| 🟢 **Off-peak** | everything else | half of peak |
+| 🔴 **Peak** | weekdays 09:00–12:00 and 14:00–18:00 | peak price (= off-peak ×2) |
+| 🟢 **Off-peak** | everything else — including all of Saturday & Sunday | half of peak |
+
+Weekends (Saturday and Sunday) are charged at the valley price all day — no peak windows on weekends.
 
 ## What you get
 
