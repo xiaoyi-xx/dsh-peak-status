@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.0.3] - 2026-09-01
+
+- Compatible with dsh 0.1.2-alpha.3 combo-batch plugin loading: since alpha.3 the web shell may concatenate plugin bundles into one shared combo script, so `document.currentScript.src` no longer identifies this bundle. The client now derives the module id from the single-file URL, falls back to scanning the combo URL for its own package leaf, and keeps the dual-registration fallback for scriptless mounts.
+- No behavior change to the chip itself; the slot API (`conversation.session.header.utilities`) is unchanged in alpha.3.
+
 ## [1.0.2] - 2026-08-23
 
 - Follow DeepSeek's peak/valley adjustment (effective 2026-08-23): weekends (Saturday & Sunday) are all-day valley price — no peak windows on weekends.

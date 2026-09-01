@@ -22,15 +22,32 @@
   // The host client-modules expects a bundle to register the id of the entry
   // it is mounted as — the package name ("@local/dsh-peak-status" for a
   // profile @local install, "dsh-peak-status" when installed from npm).
-  // Derive it from the bundle URL at runtime so one artifact works in every
-  // mount shape (bundles are loaded via <script>, so document.currentScript
-  // is the plugin script while this top-level code runs).
+  //
+  // Single-file loads use /plugins/<id>/client.js, so the id is derivable
+  // from document.currentScript.src. Since dsh 0.1.2-alpha.3 the web shell
+  // may serve plugin bundles as one shared combo script
+  // (/plugins/??<id>/client.js,<id2>/client.js&rev=...) — currentScript.src
+  // then names every bundle in the batch, not this one. Fall back to
+  // scanning the combo URL for our own package leaf, which is present in
+  // both install shapes.
   var MODULE_ID = (function () {
+    var OWN = 'dsh-peak-status'
     try {
       var el = document.currentScript
       if (el && el.src) {
-        var m = /\/plugins\/(.+?)\/client\.js/.exec(el.src)
-        if (m) return decodeURIComponent(m[1])
+        var src = el.src
+        var single = /\/plugins\/([^/]+)\/client\.js(?:\?|$)/.exec(src)
+        if (single) return decodeURIComponent(single[1])
+        var combo = /\/plugins\/\?\?([^&]+)/.exec(src)
+        if (combo) {
+          var parts = combo[1].split(',')
+          for (var i = 0; i < parts.length; i++) {
+            var m = /^(.+?)\/client\.js$/.exec(parts[i])
+            if (m && decodeURIComponent(m[1]).split('/').pop() === OWN) {
+              return decodeURIComponent(m[1])
+            }
+          }
+        }
       }
     } catch (error) { /* ignore */ }
     return null
