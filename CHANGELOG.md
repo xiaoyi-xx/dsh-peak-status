@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.0.4] - 2026-09-18
+
+- Calendar-aware peak/off-peak: 法定节假日 (statutory holidays) are valley for the whole day and 调休 makeup workdays keep the weekday windows. The Monday-weekend shortcut is replaced by a day-scanning algorithm, so both the current state and the "next transition" respect holiday spans — e.g. the last workday before 国庆 counts down to the first workday after it, and the label switches to an explicit date (`10-08 09:00`) once the jump passes a week.
+- The Chinese official work calendar is fetched over the network: the host half now registers a same-origin route `/dsh-peak-status/holiday/<year>` (it fetches jiejiariapi, then apihubs, normalizes both shapes and caches results in memory for 6 h), and the browser half falls back to the CORS-enabled `api.apihubs.cn` and finally to the plain weekend rule. Normalized days are cached in `localStorage` for 24 h.
+- The chip now names the day: a holiday shows its festival name (e.g. `国庆节`) instead of a generic state word, a 调休 workday is tagged as such, and the detail card carries a calendar sync line (`已同步 · jiejiariapi` / `未同步 · 暂按周末规则`).
+- Every failure degrades softly — with no calendar at all the chip behaves exactly like 1.0.3.
+- Verified against live upstreams for 2026: jiejiariapi and apihubs agree on all 33 holiday rest days and all 6 调休 makeup days.
+- Tests rewritten to drive the shipped `src/client.js` (and `src/index.js`) through a `__test` seam in a Node VM instead of mirroring the algorithm: 49 cases now cover the weekend rule, holidays, 调休 days, year-crossing, payload normalization, the host route (status codes, caching, upstream fallback) and boundary labels.
+
 ## [1.0.3] - 2026-09-01
 
 - Compatible with dsh 0.1.2-alpha.3 combo-batch plugin loading: since alpha.3 the web shell may concatenate plugin bundles into one shared combo script, so `document.currentScript.src` no longer identifies this bundle. The client now derives the module id from the single-file URL, falls back to scanning the combo URL for its own package leaf, and keeps the dual-registration fallback for scriptless mounts.
