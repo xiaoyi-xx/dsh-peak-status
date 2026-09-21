@@ -5,7 +5,7 @@
  * since 1.0.4):
  *   workdays: peak 09:00–12:00 / 14:00–18:00 (Beijing time), off otherwise
  *   weekends: Saturday & Sunday all day off-peak (valley price)
- *   holidays: 法定节假日 all day off-peak; 调休 makeup days keep the windows
+ *   holidays: 法定节假日 and 调休上班的周末 are off-peak for the whole day
  *
  * Unlike the 1.0.3 harness this one loads the SHIPPED browser half in a VM and
  * drives its \`__test\` seam, so the algorithm under test is the algorithm that
@@ -142,12 +142,16 @@ runCompute('国庆 10-07 周三 14:30 — 假期最后一天', '2026-10-07', 14,
   { peak: false, next: 540, daysAhead: 1, kind: 'holiday', name: '国庆节', rest: true, nextWeekday: 4, secsToNext: true })
 runCompute('节后 10-08 周四 10:00 — 恢复高峰', '2026-10-08', 10, 0, 0, WITH_CALENDAR,
   { peak: true, next: 720, daysAhead: 0, kind: 'weekday', name: '', rest: false, nextWeekday: 4, secsToNext: true })
-runCompute('调休 10-10 周六 10:00 — 按工作日高峰', '2026-10-10', 10, 0, 0, WITH_CALENDAR,
-  { peak: true, next: 720, daysAhead: 0, kind: 'makeup', name: '国庆节', rest: false, nextWeekday: 6, secsToNext: true })
-runCompute('调休 10-10 周六 19:00 — 收工后到周一', '2026-10-10', 19, 0, 0, WITH_CALENDAR,
-  { peak: false, next: 540, daysAhead: 2, kind: 'makeup', name: '国庆节', rest: false, nextWeekday: 1, secsToNext: true })
-runCompute('调休 09-20 周日 15:00 — 仍是高峰', '2026-09-20', 15, 0, 0, WITH_CALENDAR,
-  { peak: true, next: 1080, daysAhead: 0, kind: 'makeup', name: '国庆节', rest: false, nextWeekday: 7, secsToNext: true })
+runCompute('调休 10-10 周六 10:00 — 官方口径全天谷价', '2026-10-10', 10, 0, 0, WITH_CALENDAR,
+  { peak: false, next: 540, daysAhead: 2, kind: 'makeup', name: '国庆节', rest: true, nextWeekday: 1, secsToNext: true })
+runCompute('调休 10-10 周六 15:00 — 高峰窗口内依旧谷价', '2026-10-10', 15, 0, 0, WITH_CALENDAR,
+  { peak: false, next: 540, daysAhead: 2, kind: 'makeup', name: '国庆节', rest: true, nextWeekday: 1, secsToNext: true })
+runCompute('调休 10-10 周六 19:00 — 下一个高峰是周一', '2026-10-10', 19, 0, 0, WITH_CALENDAR,
+  { peak: false, next: 540, daysAhead: 2, kind: 'makeup', name: '国庆节', rest: true, nextWeekday: 1, secsToNext: true })
+runCompute('调休 09-20 周日 15:00 — 同为全天谷价', '2026-09-20', 15, 0, 0, WITH_CALENDAR,
+  { peak: false, next: 540, daysAhead: 1, kind: 'makeup', name: '国庆节', rest: true, nextWeekday: 1, secsToNext: true })
+runCompute('调休 09-20 周日 10:00 — 也不进高峰', '2026-09-20', 10, 0, 0, WITH_CALENDAR,
+  { peak: false, next: 540, daysAhead: 1, kind: 'makeup', name: '国庆节', rest: true, nextWeekday: 1, secsToNext: true })
 runCompute('节前 09-30 周三 19:00 — 跨整个假期', '2026-09-30', 19, 0, 0, WITH_CALENDAR,
   { peak: false, next: 540, daysAhead: 8, kind: 'weekday', name: '', rest: false, nextWeekday: 4, secsToNext: true })
 runCompute('跨年 12-31 周四 20:00 — 到 2027 元旦后', '2026-12-31', 20, 0, 0, WITH_CALENDAR,

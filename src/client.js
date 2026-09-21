@@ -13,9 +13,10 @@
  *   weekends:        Saturday & Sunday all day at the valley price
  *   off-peak:        everything else (priced at half of peak)
  *
- * The Chinese official work calendar refines the weekend half of that rule:
- * 法定节假日 (holiday rest days) are valley all day, and 调休 makeup days keep
- * the normal weekday windows. The calendar is fetched over the network — the
+ * The Chinese official work calendar refines that rule: per DeepSeek's peak/
+ * valley note, 中国法定节假日 and 调休上班的周末 are valley for the whole day —
+ * only ordinary Monday–Friday working days can peak. The calendar is fetched
+ * over the network — the
  * host half serves it same-origin, a CORS-capable public source and finally
  * the plain weekend rule are the fallbacks — and cached in localStorage.
  *
@@ -317,22 +318,34 @@
     }
 
     /**
-     * 一天的工作/休息属性。
-     * 有日历：法定节假日 = 全天谷价；调休上班日 = 照工作日窗口；其余照常。
-     * 无日历：退化成 1.0.3 的规则（周六周日休息，其余工作日）。
+     * 一天的"能否有高峰窗口 + 计费属性"。
+     *
+     * 官方口径（DeepSeek API 峰谷时间说明）：**调休上班的周末、中国法定节假
+     * 日，全天均按空闲时段计费**。所以能进入高峰窗口的只有"既不是周六周日、
+     * 也不是法定节假日"的普通工作日：
+     *   法定节假日              → 全天谷价（哪怕落在周一~周五）
+     *   周六/周日（含调休上班）  → 全天谷价（调休不改计费，只影响标签）
+     *   其余周一~周五            → 高峰窗口 09:00–12:00 / 14:00–18:00
+     * 无日历：退化成 1.0.3 的规则（周六周日谷价，其余工作日窗口）——对普通周
+     * 末与工作日而言与官方口径一致，唯一差别是节假日落在工作日时按高峰算。
+     *
      * @param key - 'YYYY-MM-DD'。
      * @param weekday - ISO 1=周一 … 7=周日。
      * @param days - 该年归一化日历或 null。
+     * @returns {rest, kind, name}，kind ∈ holiday | makeup | weekend | weekday。
      */
     function classifyDay(key, weekday, days) {
       var row = days === null || days === undefined ? null : days[key]
-      if (row !== undefined && row !== null) {
-        if (row.off === true) return { rest: true, kind: 'holiday', name: row.name || '' }
-        if (weekday === 6 || weekday === 7) return { rest: false, kind: 'makeup', name: row.name || '' }
-        return { rest: false, kind: 'weekday', name: row.name || '' }
+      var weekend = weekday === 6 || weekday === 7
+      var name = row === undefined || row === null ? '' : (row.name || '')
+      if (row !== undefined && row !== null && row.off === true) {
+        return { rest: true, kind: 'holiday', name: name }
       }
-      if (weekday === 6 || weekday === 7) return { rest: true, kind: 'weekend', name: '' }
-      return { rest: false, kind: 'weekday', name: '' }
+      if (weekend) {
+        // 调休上班的周末依旧全天谷价，只换个标签说明"这天本该上班"。
+        return { rest: true, kind: row === undefined || row === null ? 'weekend' : 'makeup', name: name }
+      }
+      return { rest: false, kind: 'weekday', name: name }
     }
 
     function classifyOrdinal(ordinal, daysOf) {
@@ -370,10 +383,11 @@
 
     /**
      * Peak/off-peak state at one Beijing-time instant.
-     * The official work calendar decides which days may peak at all: holiday
-     * rest days are valley across their whole span and makeup workdays keep the
-     * weekday windows, so both the current state and its neighbouring
-     * transitions are found by scanning days instead of weekday arithmetic.
+     * The official work calendar decides which days may peak at all: statutory
+     * holidays and every Saturday/Sunday (调休 makeup weekends included) are
+     * valley across their whole span, so both the current state and its
+     * neighbouring transitions are found by scanning days instead of weekday
+     * arithmetic.
      * @param t - bjParts() result (calendar date, clock, ISO weekday).
      * @param daysOf - year → normalized days; defaults to the loaded cache.
      * @returns { peak, nextMin, daysAhead, nextOrdinal, nextWeekday, secsToNext, progress, day }
@@ -465,15 +479,17 @@
       var boundaryLabel = fmtBoundaryLabel(s)
       var stateWord = s.peak
         ? '高峰期'
-        : (day.kind === 'holiday' ? (day.name || '法定节假日') : (day.kind === 'weekend' ? '周末谷价' : '空闲期'))
+        : (day.kind === 'holiday'
+          ? (day.name || '法定节假日')
+          : (day.kind === 'weekend' ? '周末谷价' : (day.kind === 'makeup' ? '调休上班 · 谷价' : '空闲期')))
       var dayNote = day.kind === 'holiday'
         ? ('今日' + (day.name === '' ? '为法定节假日' : '为' + day.name) + '：全天按谷价计费。')
         : (day.kind === 'makeup'
-          ? ('今日为调休上班日（周' + WEEKDAY_LABELS[tick.weekday - 1] + '）：高峰窗口照常。')
+          ? ('今日为调休上班日（周' + WEEKDAY_LABELS[tick.weekday - 1] + '）：官方口径仍全天按空闲时段计费。')
           : '')
       var offNote = day.kind === 'holiday'
         ? ('（' + (day.name === '' ? '法定节假日' : day.name) + ' 全天谷价）')
-        : (day.kind === 'weekend' ? '（周末全天谷价）' : '')
+        : (day.kind === 'makeup' ? '（调休上班，全天谷价）' : (day.kind === 'weekend' ? '（周末全天谷价）' : ''))
       var tooltip = (s.peak
         ? '高峰期（工作日 9:00-12:00 / 14:00-18:00）：价格 = 空闲 ×2。' + boundaryLabel + ' 结束。'
         : '空闲期：价格为高峰一半' + offNote + '，下一高峰 ' + boundaryLabel + '。') + dayNote + '点击展开详情'
@@ -533,8 +549,8 @@
             '高峰窗口（工作日）：09:00–12:00 / 14:00–18:00'),
           react.createElement('div', { key: 'l2b', style: { color: day.rest ? OFF_COLOR : DIM, fontWeight: day.rest ? 600 : 400 } },
             '法定节假日与周末（周六、周日）：全天按谷价计费'),
-          react.createElement('div', { key: 'l2c', style: { color: day.kind === 'makeup' ? PEAK_COLOR : DIM, fontWeight: day.kind === 'makeup' ? 600 : 400 } },
-            '调休上班日：照工作日高峰窗口计费'),
+          react.createElement('div', { key: 'l2c', style: { color: day.kind === 'makeup' ? OFF_COLOR : DIM, fontWeight: day.kind === 'makeup' ? 600 : 400 } },
+            '调休上班的周末：仍全天按谷价计费（官方口径）'),
           dayNote === '' ? null : react.createElement('div', { key: 'daynote', style: { color: color, fontWeight: 600 } }, dayNote),
           react.createElement('div', { key: 'l3', style: { fontVariantNumeric: 'tabular-nums' } },
             '下一转折：' + boundaryLabel + ' · 倒计时 ' + fmtDurFull(s.secsToNext)),

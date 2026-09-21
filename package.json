@@ -1,7 +1,7 @@
 {
   "name": "dsh-peak-status",
-  "version": "1.0.4",
-  "description": "Peak-hour indicator for the DSH web GUI: a native header chip showing whether the current Beijing time is inside DeepSeek's API peak window (weekdays 09:00–12:00 / 14:00–18:00; weekends all-day valley price), with a live clock, countdown, and ×2/off-peak pricing hints. Statutory holidays are valley all day and 调休 makeup workdays keep the weekday windows; the official work calendar is fetched over the network and cached. · DSH Web GUI 高峰指示灯：原生会话头部胶囊，实时显示当前北京时间是否处于 DeepSeek API 高峰时段（工作日 9:00-12:00 / 14:00-18:00，周末全天谷价；法定节假日全天谷价、调休上班日按工作日高峰，节假日表联网获取并缓存）。",
+  "version": "1.0.5",
+  "description": "Peak-hour indicator for the DSH web GUI: a native header chip showing whether the current Beijing time is inside DeepSeek's API peak window (weekdays 09:00–12:00 / 14:00–18:00; weekends all-day valley price), with a live clock, countdown, and ×2/off-peak pricing hints. Statutory holidays and 调休上班的周末 are valley all day — only ordinary weekdays can peak; the official work calendar is fetched over the network and cached. · DSH Web GUI 高峰指示灯：原生会话头部胶囊，实时显示当前北京时间是否处于 DeepSeek API 高峰时段（工作日 9:00-12:00 / 14:00-18:00，周末全天谷价；法定节假日与调休上班的周末均全天谷价、只有普通工作日才有高峰，节假日表联网获取并缓存）。",
   "type": "module",
   "main": "lib/index.js",
   "exports": {

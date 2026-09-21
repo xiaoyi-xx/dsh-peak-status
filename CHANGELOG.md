@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.5] - 2026-09-18
+
+- **Fix (计费口径):** 调休上班的周末全天按空闲时段计费，而不是走工作日高峰窗口。DeepSeek 的峰谷时间说明把「调休上班的周末」与「中国法定节假日」都算作全天空闲，因此**只有普通周一~周五工作日才可能有高峰窗口**。1.0.4 错误地让调休周六进入了高峰窗口（09:00–12:00 / 14:00–18:00 按 ×2）；现在这类日期显示 🟢 `调休上班 · 谷价`，下一转折直接扫描到下一个普通工作日的 09:00。
+- 调休标签仅作为信息保留：胶囊标注该日、详情卡解释口径，"下一次转换"的扫描也把调休周末与节假日一样跳过。
+- 测试更新：调休用例改为断言全天谷价（含原先落在高峰窗口内的时间点），调休周六与调休周日各覆盖，共 51 例。
+- README（中英）与包描述改为陈述官方口径，替换原先"调休日算工作日"的读法。
+
 ## [1.0.4] - 2026-09-18
 
 - Calendar-aware peak/off-peak: 法定节假日 (statutory holidays) are valley for the whole day and 调休 makeup workdays keep the weekday windows. The Monday-weekend shortcut is replaced by a day-scanning algorithm, so both the current state and the "next transition" respect holiday spans — e.g. the last workday before 国庆 counts down to the first workday after it, and the label switches to an explicit date (`10-08 09:00`) once the jump passes a week.

@@ -17,20 +17,20 @@ DeepSeek's official peak/valley API pricing (effective 2026-08-17, weekends adju
 
 Weekends (Saturday and Sunday) are charged at the valley price all day — no peak windows on weekends.
 
-The Chinese official work calendar refines the weekend half of that rule:
+Per DeepSeek's peak/valley note, the only days that can peak are ordinary Monday–Friday working days:
 
 | Day | State (Beijing time) |
 | :-- | :-- |
 | 法定节假日 (statutory holiday) | valley for the whole day, exactly like a weekend |
-| 调休 makeup workday (a weekend worked) | the normal weekday windows apply |
+| 调休上班的周末 (a weekend worked) | valley for the whole day too — 调休 does not change billing |
 
-So the chip shows 🟢 **国庆节** instead of a red peak on 1 October, and 🔴 peak windows on a 调休 Saturday.
+So the chip shows 🟢 **国庆节** instead of a red peak on 1 October, and 🟢 **调休上班 · 谷价** on a 调休 Saturday.
 
 ## What you get
 
 - A colored status dot — **red = peak, green = off-peak** — plus the live Beijing clock (`HH:MM:SS`, timezone `Asia/Shanghai`, independent of your machine's timezone)
 - A countdown: `剩 3h 54m · 价格 ×2` during peak / `距高峰 3h 54m · 半价` off-peak
-- Holiday awareness: on a 法定节假日 the chip names the festival (e.g. `国庆节`) and counts down to the first peak window after the break; on a 调休 workday it shows the normal peak state and tags the day
+- Holiday awareness: on a 法定节假日 the chip names the festival (e.g. `国庆节`) and counts down to the first peak window after the break; on a 调休上班的周末 it shows all-day valley and tags the day
 - Click the chip to expand a detail card: peak windows, the next transition with a `HH:MM:SS` countdown, and a progress bar of the current phase
 - Fully themed with the web UI's native `--dsw-alias-*` variables — it blends into the interface instead of floating over it
 - Mounted persistently: it survives dsh web restarts
@@ -65,7 +65,7 @@ The calendar (法定节假日 + 调休 makeup days) is fetched over the network,
 
 Normalized days are cached in `localStorage` for 24 hours, so a restart or a spell offline still renders the right state, and the detail card always reports the source (`已同步 · jiejiariapi` / `未同步 · 暂按周末规则`).
 
-This is the *official Chinese work calendar* reading of the pricing: statutory holidays are valley and 调休 days are workdays. DeepSeek's published adjustment only mentions Saturday and Sunday — if the calendar ever diverges from what is billed, the chip follows the calendar.
+Pricing follows DeepSeek's 峰谷时间说明: **调休上班的周末 and 中国法定节假日 are billed at the off-peak rate for the whole day**. The calendar supplies exactly those two labels — a 调休 day never gains a peak window.
 
 ## License
 
