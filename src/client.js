@@ -448,7 +448,256 @@
       return pad(parts.mo) + '-' + pad(parts.d) + ' ' + fmtBoundary(s.nextMin)
     }
 
-    function PeakChip() {
+    // ── economy mode ────────────────────────────────────────────────────
+    // The host owns the decision (per-chat switch + schedule); this half only
+    // reads its status and flips the switch, so the browser and the gate can
+    // never disagree about which chat is in economy mode.
+    var ECONOMY_ROUTE = '/dsh-peak-status/economy'
+    var LEAF_COLOR = 'var(--dsw-alias-state-success-primary, #30a46c)'
+    var ECO_POLL_MS = 15000
+
+    /** The green leaf that marks economy mode, drawn rather than typed so it
+     * keeps the theme colour and never depends on an emoji font. */
+    function LeafIcon(size, color) {
+      return react.createElement('svg', {
+        width: size, height: size, viewBox: '0 0 16 16',
+        'aria-hidden': true, style: { display: 'block', flexShrink: 0 },
+      }, [
+        react.createElement('path', { key: 'blade', fill: color, d: 'M13.6 1.6C7.4 1.6 2.4 5.2 2.4 10.3c0 1 .2 2 .6 2.9.9.4 1.9.6 2.9.6 5.1 0 7.7-5 7.7-12.2Z' }),
+        react.createElement('path', { key: 'vein', fill: 'none', stroke: 'var(--dsw-alias-bg-base, #ffffff)', strokeWidth: 1.1, strokeLinecap: 'round', d: 'M3.6 13.2C6.2 10.2 8.6 7.5 11.2 5' }),
+      ])
+    }
+
+    /** Beijing wall clock for an arbitrary instant, e.g. a window's resume time. */
+    function fmtInstantClock(instant) {
+      try {
+        var parts = new Intl.DateTimeFormat('en-GB', {
+          timeZone: TZ, hour12: false, hour: '2-digit', minute: '2-digit',
+        }).formatToParts(new Date(instant))
+        var h = 0
+        var m = 0
+        for (var i = 0; i < parts.length; i++) {
+          if (parts[i].type === 'hour') h = Number(parts[i].value) % 24
+          if (parts[i].type === 'minute') m = Number(parts[i].value)
+        }
+        return pad(h) + ':' + pad(m)
+      } catch (error) {
+        return ''
+      }
+    }
+
+    /** The chat the shell is showing, via the client sessions service. */
+    function readCurrentSession(runtime) {
+      try {
+        var list = runtime !== undefined && runtime !== null && runtime.sessions !== undefined ? runtime.sessions.list : undefined
+        var snapshot = list !== undefined && list !== null && typeof list.getSnapshot === 'function' ? list.getSnapshot() : null
+        return snapshot !== null && typeof snapshot.current === 'string' ? snapshot.current : null
+      } catch (error) {
+        return null
+      }
+    }
+
+    function useSessionId(runtime) {
+      var pair = react.useState(function () { return readCurrentSession(runtime) })
+      var sessionId = pair[0]
+      var setSessionId = pair[1]
+      react.useEffect(function () {
+        var list = runtime !== undefined && runtime !== null && runtime.sessions !== undefined ? runtime.sessions.list : undefined
+        if (list === undefined || list === null || typeof list.subscribe !== 'function') return undefined
+        var read = function () {
+          var next = readCurrentSession(runtime)
+          setSessionId(function (previous) { return previous === next ? previous : next })
+        }
+        read()
+        return list.subscribe(read)
+      }, [runtime])
+      return sessionId
+    }
+
+    /**
+     * One poller shared by the header chip and the dormant bar. They mount
+     * together and ask exactly the same question, so they share one interval
+     * and one cached answer instead of doubling the traffic.
+     */
+    var ecoStore = (function () {
+      var state = { sessionId: null, status: null, error: '', busy: false }
+      var listeners = []
+      var timer = null
+      var watching = null
+
+      function emit() {
+        var copy = listeners.slice()
+        for (var i = 0; i < copy.length; i++) {
+          try {
+            copy[i]()
+          } catch (error) {
+            // one broken subscriber must not silence the others
+          }
+        }
+      }
+
+      function publish(next) {
+        state = next
+        emit()
+      }
+
+      function applyBody(sessionId, body) {
+        publish({ sessionId: sessionId, status: body, error: '', busy: false })
+      }
+
+      function load(sessionId) {
+        fetch(ECONOMY_ROUTE + '/status?sessionId=' + encodeURIComponent(sessionId), { headers: { accept: 'application/json' } })
+          .then(function (response) {
+            if (response.ok !== true) throw new Error('HTTP ' + response.status)
+            return response.json()
+          })
+          .then(function (body) {
+            if (watching === sessionId) applyBody(sessionId, body)
+          })
+          .catch(function (error) {
+            if (watching !== sessionId) return
+            publish({ sessionId: sessionId, status: null, error: String(error && error.message ? error.message : error), busy: false })
+          })
+      }
+
+      return {
+        read: function () { return state },
+        subscribe: function (listener) {
+          listeners.push(listener)
+          return function () {
+            var index = listeners.indexOf(listener)
+            if (index >= 0) listeners.splice(index, 1)
+          }
+        },
+        /** Point the shared poller at one chat. Idempotent. */
+        watch: function (sessionId) {
+          if (watching === sessionId) return
+          watching = sessionId
+          if (timer !== null) {
+            clearInterval(timer)
+            timer = null
+          }
+          if (sessionId === null) {
+            publish({ sessionId: null, status: null, error: '', busy: false })
+            return
+          }
+          publish({ sessionId: sessionId, status: null, error: '', busy: false })
+          load(sessionId)
+          timer = setInterval(function () { load(sessionId) }, ECO_POLL_MS)
+        },
+        toggle: function (sessionId) {
+          if (sessionId === null || sessionId === undefined) return
+          publish({ sessionId: sessionId, status: state.status, error: state.error, busy: true })
+          fetch(ECONOMY_ROUTE + '/toggle', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ sessionId: sessionId }),
+          })
+            .then(function (response) {
+              return response.json().then(function (body) { return { ok: response.ok, body: body } })
+            })
+            .then(function (result) {
+              if (result.ok !== true || result.body === null || result.body.ok !== true) throw new Error('切换失败')
+              applyBody(sessionId, result.body)
+            })
+            .catch(function (error) {
+              publish({ sessionId: sessionId, status: state.status, error: String(error && error.message ? error.message : error), busy: false })
+            })
+        },
+      }
+    })()
+
+    /** Subscribe a component to the shared poller and keep it on `sessionId`. */
+    function useEconomy(runtime) {
+      var sessionId = useSessionId(runtime)
+      var pair = react.useState(0)
+      var bump = pair[1]
+      react.useEffect(function () {
+        return ecoStore.subscribe(function () { bump(function (n) { return n + 1 }) })
+      }, [])
+      react.useEffect(function () { ecoStore.watch(sessionId) }, [sessionId])
+      return { sessionId: sessionId, eco: ecoStore.read() }
+    }
+
+    /** One sentence naming what economy mode is doing for this chat. */
+    function economyNote(eco) {
+      var status = eco.status
+      if (status === null) {
+        return eco.error === '' ? '正在读取经济模式状态…' : ('无法读取经济模式状态：' + eco.error + '（插件是否已加载？）')
+      }
+      if (status.masterEnabled !== true) return '插件总开关已关闭（cordis.patch.yml 中 economy.enabled: false），所有对话都不会暂停。'
+      if (status.sessionEnabled !== true) {
+        return '开启后，高峰时段本对话的模型请求会在发送前暂停、空闲期自动继续；高峰期间你发的消息也等到空闲期再处理。'
+      }
+      var resume = status.state === undefined || status.state.resumeAt === null ? '' : fmtInstantClock(status.state.resumeAt)
+      if (status.dormant === true) {
+        return '高峰时段已休眠：本对话的模型请求已暂停，不会产生费用' + (resume === '' ? '' : '，' + resume + ' 自动继续') + '。关闭经济模式可立即恢复。'
+      }
+      if (status.state !== undefined && status.state.name === 'PAUSED') {
+        return '高峰时段：本对话的模型请求会在发送前暂停' + (resume === '' ? '' : '，' + resume + ' 自动继续') + '。'
+      }
+      return '本对话已开启经济模式，当前为空闲期，请求正常发送。'
+    }
+
+    /**
+     * The dormant indicator, docked above the composer.
+     *
+     * The transcript's own "深度求索中…" line is rendered by the shell with no
+     * slot to hook, and a locale namespace has exactly one owner, so economy
+     * mode cannot restyle that label from a plugin. It states its own reason
+     * here instead, right where the reader is looking while a turn is open.
+     */
+    function DormantBar(props) {
+      var runtime = props === undefined ? undefined : props.runtime
+      var live = useEconomy(runtime)
+      var pair = react.useState(function () { return Date.now() })
+      var now = pair[0]
+      var setNow = pair[1]
+      react.useEffect(function () {
+        var id = setInterval(function () { setNow(Date.now()) }, 1000)
+        return function () { clearInterval(id) }
+      }, [])
+
+      var status = live.eco.status
+      if (live.sessionId === null || status === null || status.dormant !== true) return null
+
+      var resumeAt = status.state === undefined ? null : status.state.resumeAt
+      var remaining = resumeAt === null || resumeAt === undefined ? null : Math.max(0, Math.round((resumeAt - now) / 1000))
+      var label = resumeAt === null || resumeAt === undefined ? '' : fmtInstantClock(resumeAt)
+
+      return react.createElement(
+        'div',
+        {
+          role: 'status',
+          'aria-live': 'polite',
+          title: '经济模式：高峰时段暂停本对话的模型请求，空闲（半价）时段自动继续。在会话头部关闭经济模式可立即恢复。',
+          style: {
+            display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+            margin: '0 auto 6px', padding: '5px 12px',
+            fontFamily: FONT, fontSize: 11.5, lineHeight: 1.6, color: DIM,
+            background: 'var(--dsw-alias-bg-layer-1, #f7f8fa)',
+            border: '1px solid var(--dsw-alias-border-l1, #e4e7ec)',
+            borderLeft: '3px solid ' + LEAF_COLOR,
+            borderRadius: 10,
+          },
+        },
+        [
+          LeafIcon(14, LEAF_COLOR),
+          react.createElement('span', { key: 'title', style: { fontWeight: 700, color: LEAF_COLOR } }, '经济模式休眠中'),
+          react.createElement('span', { key: 'why' }, '高峰时段已暂停本对话的模型请求，不会产生费用'),
+          react.createElement('span', { key: 'when', style: { fontVariantNumeric: 'tabular-nums' } },
+            label === ''
+              ? '空闲期自动继续'
+              : (label + ' 自动继续' + (remaining === null ? '' : '（剩 ' + fmtDurFull(remaining) + '）'))),
+          react.createElement('span', { key: 'hint', style: { opacity: 0.75 } }, '在会话头部关闭经济模式可立即继续'),
+        ],
+      )
+    }
+
+    function PeakChip(props) {
+      var runtime = props === undefined ? undefined : props.runtime
+      var live = useEconomy(runtime)
+      var eco = live.eco
       var tickState = react.useState(bjParts())
       var tick = tickState[0]
       var setTick = tickState[1]
@@ -475,6 +724,10 @@
       var s = compute(tick)
       var day = s.day
       var color = s.peak ? PEAK_COLOR : OFF_COLOR
+      var ecoOn = eco.status !== null && eco.status.sessionEnabled === true
+      var ecoDormant = eco.status !== null && eco.status.dormant === true
+      var ecoResumeAt = eco.status === null || eco.status.state === undefined ? null : eco.status.state.resumeAt
+      var ecoResumeLabel = ecoResumeAt === null ? '' : fmtInstantClock(ecoResumeAt)
       var clock = fmtClock(tick)
       var boundaryLabel = fmtBoundaryLabel(s)
       var stateWord = s.peak
@@ -492,7 +745,9 @@
         : (day.kind === 'makeup' ? '（调休上班，全天谷价）' : (day.kind === 'weekend' ? '（周末全天谷价）' : ''))
       var tooltip = (s.peak
         ? '高峰期（工作日 9:00-12:00 / 14:00-18:00）：价格 = 空闲 ×2。' + boundaryLabel + ' 结束。'
-        : '空闲期：价格为高峰一半' + offNote + '，下一高峰 ' + boundaryLabel + '。') + dayNote + '点击展开详情'
+        : '空闲期：价格为高峰一半' + offNote + '，下一高峰 ' + boundaryLabel + '。') + dayNote
+        + (ecoOn ? (ecoDormant ? '本对话经济模式已休眠，模型请求暂停中。' : '本对话已开启经济模式。') : '')
+        + '点击展开详情'
 
       var chip = react.createElement(
         'div',
@@ -509,6 +764,7 @@
           },
         },
         [
+          ecoOn ? LeafIcon(12, LEAF_COLOR) : null,
           react.createElement('span', { key: 'dot', style: { width: 7, height: 7, borderRadius: '50%', background: color, flexShrink: 0 } }),
           react.createElement('span', { key: 'state', style: { fontWeight: s.peak ? 700 : 500, color: color } }, stateWord),
           react.createElement('span', { key: 'clock', style: { fontVariantNumeric: 'tabular-nums' } }, clock),
@@ -568,6 +824,49 @@
             '节假日表（北京）：' + calStatusText(tick.y)),
           react.createElement('div', { key: 'foot', style: { fontSize: 10.5, lineHeight: 1.5, opacity: 0.85 } },
             '官方峰谷定价 8/17 生效，8/23 起周末全天谷价；空闲价 = 高峰一半。'),
+          react.createElement('div', {
+            key: 'eco',
+            style: {
+              marginTop: 3, paddingTop: 7,
+              borderTop: '1px solid var(--dsw-alias-border-l1, #e4e7ec)',
+              display: 'flex', flexDirection: 'column', gap: 4,
+            },
+          }, [
+            react.createElement('div', { key: 'ecoh', style: { display: 'flex', alignItems: 'center', gap: 6 } }, [
+              LeafIcon(12, ecoOn ? LEAF_COLOR : DIM),
+              react.createElement('span', { key: 'ecot', style: { fontWeight: 700, color: ecoOn ? LEAF_COLOR : DIM } }, '经济模式'),
+              react.createElement('span', { key: 'ecos', style: { opacity: 0.8 } },
+                eco.status === null
+                  ? '…'
+                  : (eco.status.sessionEnabled === true ? (ecoDormant ? '休眠中' : '已开启') : '关闭')),
+              react.createElement('button', {
+                key: 'ecob',
+                type: 'button',
+                disabled: eco.busy === true || live.sessionId === null,
+                onClick: function (event) {
+                  event.stopPropagation()
+                  ecoStore.toggle(live.sessionId)
+                },
+                style: {
+                  marginLeft: 'auto', fontFamily: FONT, fontSize: 11, lineHeight: '18px',
+                  padding: '0 9px', borderRadius: 6,
+                  border: '1px solid ' + (ecoOn ? LEAF_COLOR : 'var(--dsw-alias-border-l1, #e4e7ec)'),
+                  background: 'transparent',
+                  color: ecoOn ? LEAF_COLOR : DIM,
+                  cursor: eco.busy === true ? 'progress' : 'pointer',
+                  opacity: eco.busy === true ? 0.6 : 1,
+                },
+              }, ecoOn ? '关闭' : '开启'),
+            ]),
+            react.createElement('div', {
+              key: 'ecod',
+              style: {
+                fontSize: 10.5, lineHeight: 1.55,
+                color: ecoDormant ? LEAF_COLOR : DIM,
+                fontWeight: ecoDormant ? 600 : 400,
+              },
+            }, economyNote(eco)),
+          ]),
         ],
       )
 
@@ -585,7 +884,17 @@
         slots.inject('conversation.session.header.utilities', function () {
           return slots.register(
             { name: 'conversation.session.header.utilities', id: 'dsh-peak-status', order: 1 },
-            PeakChip,
+            function () { return react.createElement(PeakChip, { runtime: ctx }) },
+          )
+        })
+        // The dormant bar docks just above the composer: the transcript's own
+        // "深度求索中…" line is rendered by the shell without a slot, so
+        // economy mode states its own reason where the reader is looking
+        // instead of fighting that label for the same pixels.
+        slots.inject('conversation.composer.dock', function () {
+          return slots.register(
+            { name: 'conversation.composer.dock', id: 'dsh-peak-status-dormant', order: 1 },
+            function () { return react.createElement(DormantBar, { runtime: ctx }) },
           )
         })
       } catch (error) {
@@ -593,7 +902,7 @@
       }
     }
 
-    var inject = ['slots']
+    var inject = ['slots', 'sessions']
 
     exports.apply = apply
     exports.inject = inject
@@ -613,6 +922,8 @@
       calStatusText: calStatusText,
       ensureYear: ensureYear,
       daysOfYear: daysOfYear,
+      economyRoute: ECONOMY_ROUTE,
+      leafColor: LEAF_COLOR,
     }
     return module.exports
   }

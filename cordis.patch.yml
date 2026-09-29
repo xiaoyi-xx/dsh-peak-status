@@ -2,3 +2,15 @@
 - insert:
     - id: dsh-peak-status
       name: 'dsh-peak-status'
+      # Economy mode needs no configuration — the defaults are the official
+      # peak windows. Uncomment to change them.
+      # config:
+      #   economy:
+      #     enabled: true              # master switch; each chat's own switch is the real control
+      #     windows:                   # half-open [pauseAt, resumeAt), Beijing time
+      #       - { id: peak-am, pauseAt: '09:00', resumeAt: '12:00' }
+      #       - { id: peak-pm, pauseAt: '14:00', resumeAt: '18:00' }
+      #     activeDays: [1, 2, 3, 4, 5]  # ISO weekdays a window may apply to (weekends are valley)
+      #     warnMinutes: 5             # how long before a window the chip reports "approaching"
+      #     routeFilter: deepseek-official   # or `all` to hold every provider
+      #     defaultEnabled: false      # true = every new chat starts in economy mode
